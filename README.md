@@ -4,7 +4,9 @@
 contracts in `orbit-auth`. It creates cryptographically random state, an OpenID nonce when an
 issuer is configured, and an S256 PKCE challenge. It stores the verifier in a short-lived external
 transaction store, atomically consumes callback state once, exchanges the authorization code, and
-refuses OIDC identity unless a cryptographic ID-token verifier is configured.
+refuses OIDC identity unless a cryptographic ID-token verifier is configured. Callback state must
+remain the generated 43-character base64url value; malformed or transformed values are rejected
+before storage lookup.
 
 ```bash
 pip install orbit-auth orbit-auth-oauth2
@@ -40,12 +42,14 @@ state failures are exposed as generic typed errors; provider descriptions and ra
 not retained in exception text. Authorization codes are not retried after transaction consumption;
 start a new login after cancellation or a network failure.
 
-The API is pre-alpha and unpublished. This package currently has no Redis/database store, HTTP
-client, concrete OIDC verifier, vendor adapter, or live identity-provider validation. Production
-use requires independently reviewed adapters and deployment-specific state-store protection,
-redirect URI registration, cookie/session binding, CSRF policy, key rotation, and incident/revocation
-handling. Never put client secrets in source control or browser code; use a confidential backend and
-a secret manager where applicable.
+This is a **v0.1.0-alpha review candidate**, not a published release. On CPython 3.11.14, 3.12.14,
+3.13.15, and 3.14.7, all 31 tests, Ruff lint and format checks, strict mypy, dependency audits, and
+wheel/sdist builds pass locally. Hosted CI and live identity-provider validation remain release gates.
+This package currently has no Redis/database store, HTTP client, concrete OIDC verifier, or vendor
+adapter. Production use requires independently reviewed adapters and deployment-specific state-store
+protection, redirect URI registration, cookie/session binding, CSRF policy, key rotation, and
+incident/revocation handling. Never put client secrets in source control or browser code; use a
+confidential backend and a secret manager where applicable.
 
 ## Documentation
 

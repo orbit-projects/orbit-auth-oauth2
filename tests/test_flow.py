@@ -19,6 +19,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
@@ -273,6 +274,32 @@ async def test_callback_rejects_expired_transaction_before_provider_exchange() -
     assert provider.exchange_arguments is None
 
 
+@pytest.mark.parametrize("expires_at", [float("nan"), float("inf"), float("-inf"), True])
+async def test_callback_rejects_corrupt_transaction_expiry_before_provider_exchange(
+    expires_at: float | bool,
+) -> None:
+    store = MemoryStore()
+    provider = Provider()
+    flow = OAuth2Flow(store)
+    start = await flow.begin(
+        provider,
+        client_id="web-client",
+        redirect_uri="https://app.example/callback",
+        session_binding=SESSION_BINDING,
+    )
+    key, transaction = next(iter(store.values.items()))
+    store.values[key] = replace(transaction, expires_at=expires_at)
+
+    with pytest.raises(OAuthCallbackError, match="invalid expiry"):
+        await flow.complete(
+            provider,
+            state=start.state,
+            session_binding=SESSION_BINDING,
+            code="authorization-code",
+        )
+    assert provider.exchange_arguments is None
+
+
 async def test_oidc_requires_verifier_and_binds_nonce_issuer_and_audience() -> None:
     store = MemoryStore()
     provider = Provider()
@@ -439,6 +466,8 @@ async def test_code_is_not_retried_after_cancellation() -> None:
     ("kwargs", "message"),
     [
         ({"state": "short", "code": "x"}, "state is invalid"),
+        ({"state": "é" * 43, "code": "x"}, "state is invalid"),
+        ({"state": "!" * 43, "code": "x"}, "state is invalid"),
         ({"state": "s" * 16, "code": "bad\ncode"}, "authorization code is invalid"),
         ({"state": "s" * 16, "code": "x", "error": "access_denied"}, "both code and error"),
     ],

@@ -29,10 +29,44 @@ Representative implementation files in this checkout:
 - `src/orbit_auth_oauth2/__init__.py`
 - `src/orbit_auth_oauth2/flow.py`
 
-## Public contract and scope
+## Flow and trust boundaries
 
-The README does not contain a separately headed architecture section. Its responsibility statement above and the public source files define the implemented scope; this guide adds no behavior beyond that description.
+The application owns the HTTP routes and browser session. The capability owns protocol-neutral
+state validation, PKCE construction, callback sequencing, and OIDC claim binding. The provider
+adapter owns provider endpoints, credentials, HTTP transport, token exchange, and cryptographic
+ID-token verification. The transaction store is an application-supplied shared persistence
+boundary.
 
-## Boundary rules
+### Starting authorization
 
-Keep provider SDKs, credentials, transports, and provider-specific error translation in provider adapters. Keep reusable capability contracts in the matching capability package and lifecycle orchestration in Core. Apply the relevant layer for this repository and preserve the dependency direction shown above.
+1. The application passes a configured provider, exact client ID and redirect URI, scopes, and a
+   high-entropy session binding to `begin()`.
+2. The capability generates random state and PKCE verifier values. For OIDC it also generates a
+   nonce, requires the `openid` scope, and requires an ID-token verifier to be configured.
+3. The provider adapter builds the authorization URL. The capability checks HTTPS, endpoint
+   identity, and that the adapter preserved every required parameter.
+4. The capability stores the transaction under a SHA-256 digest of state with the configured TTL.
+   The application returns the checked authorization URL to the browser.
+
+### Completing authorization
+
+1. The application passes callback state, code or denial, and the original server-derived session
+   binding to `complete()`.
+2. The store atomically compares the binding and consumes the transaction once. A binding mismatch
+   must leave the transaction available to the initiating browser.
+3. The capability verifies transaction expiry and provider configuration, then exchanges the code
+   with the original redirect URI and PKCE verifier. It never retries a consumed code.
+4. For OIDC, the adapter cryptographically verifies the ID token. The capability checks the returned
+   issuer, audience, authorized party, expiry, and nonce against the stored login transaction.
+
+`complete()` consumes state before exchanging the authorization code. Cancellation or network
+failure after consumption therefore requires a new flow; this avoids replaying a code whose
+exchange outcome may be ambiguous. Provider network timeouts are controlled by the adapter because
+the capability makes no network requests itself.
+
+## Contract references
+
+The [package README](../../README.md) documents installation, composition, storage requirements,
+and release limitations. The [security guide](../security/overview.md) documents the threat
+boundaries and deployment responsibilities. Public Python contracts are in
+`src/orbit_auth_oauth2/flow.py`; they supplement, rather than replace, the behavioral guides.

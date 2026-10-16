@@ -43,6 +43,8 @@ _MAX_CODE_LENGTH = 8_192
 _MAX_ERROR_LENGTH = 255
 _MAX_SCOPES = 1_024
 _MAX_SUBJECT_LENGTH = 255
+_STATE_LENGTH = 43
+_STATE_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_")
 
 
 class OAuthFlowError(Exception):
@@ -325,6 +327,12 @@ class OAuth2Flow:
         if not hmac.compare_digest(transaction.state, state):
             raise OAuthCallbackError("OAuth state did not match the pending transaction.")
         now = _now(self._clock)
+        if (
+            isinstance(transaction.expires_at, bool)
+            or not isinstance(transaction.expires_at, (int, float))
+            or not math.isfinite(transaction.expires_at)
+        ):
+            raise OAuthCallbackError("OAuth transaction has an invalid expiry.")
         if transaction.expires_at <= now:
             raise OAuthCallbackError("OAuth transaction expired.")
         if (
@@ -538,8 +546,17 @@ def _validate_scopes(scopes: Collection[str]) -> frozenset[str]:
 
 
 def _validate_state(state: str) -> None:
-    """Bound callback state before hashing or reaching storage."""
-    if not isinstance(state, str) or not 16 <= len(state) <= 512 or _has_control(state):
+    """Require the exact base64url form generated before hashing or reaching storage.
+
+    State is generated internally with 32 random bytes and unpadded base64url encoding, which
+    produces 43 characters. Enforcing that shape prevents malformed callback text from reaching
+    ASCII key encoding or expanding the callback lookup surface.
+    """
+    if (
+        not isinstance(state, str)
+        or len(state) != _STATE_LENGTH
+        or any(character not in _STATE_CHARACTERS for character in state)
+    ):
         raise OAuthCallbackError("OAuth callback state is invalid.")
 
 
